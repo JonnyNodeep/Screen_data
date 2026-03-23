@@ -6,9 +6,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from export import export_records_to_excel
 from gpt_parser import parse_with_gpt
-from ocr import extract_raw_text, load_image_paths
+from ocr import extract_raw_text_with_meta, load_image_paths
 from utils import preprocess_text, run_preprocess_smoke_check
 
 
@@ -106,6 +108,9 @@ def main() -> None:
 
     aggregated_records: list[dict[str, Any]] = []
     file_results: list[dict[str, Any]] = []
+    debug_rows: list[dict[str, Any]] = []
+    total_ocr_lines = 0
+    total_gpt_records = 0
 
     for sample_input, sample_output in run_preprocess_smoke_check():
         logger.info("Preprocess smoke-check: %s -> %s", ascii(sample_input), ascii(sample_output))
@@ -113,16 +118,26 @@ def main() -> None:
     for image_path in image_paths:
         image_name = image_path.name
         try:
-            raw_text = extract_raw_text(image_path, logger=logger)
+            raw_text, ocr_line_count = extract_raw_text_with_meta(image_path, logger=logger)
             if raw_text is None:
                 ocr_skipped += 1
                 file_results.append(
                     {"file": image_name, "status": "skipped", "stage": "ocr", "records": 0}
                 )
                 logger.warning("FILE %s | status=skipped | stage=ocr | reason=empty_or_failed", image_name)
+                debug_rows.append(
+                    {
+                        "file": image_name,
+                        "ocr_line_count": ocr_line_count,
+                        "ocr_raw_text": None,
+                        "gpt_record_count": 0,
+                        "gpt_records_json": None,
+                    }
+                )
                 continue
             ocr_success += 1
             logger.info("FILE %s | status=ok | stage=ocr", image_name)
+            total_ocr_lines += ocr_line_count
 
             clean_text = preprocess_text(raw_text)
             if not clean_text:
@@ -138,6 +153,15 @@ def main() -> None:
                 logger.warning(
                     "FILE %s | status=skipped | stage=preprocess | reason=empty_clean_text",
                     image_name,
+                )
+                debug_rows.append(
+                    {
+                        "file": image_name,
+                        "ocr_line_count": ocr_line_count,
+                        "ocr_raw_text": raw_text,
+                        "gpt_record_count": 0,
+                        "gpt_records_json": None,
+                    }
                 )
                 continue
 
@@ -155,14 +179,41 @@ def main() -> None:
                     {"file": image_name, "status": "skipped", "stage": "gpt", "records": 0}
                 )
                 logger.warning("FILE %s | status=skipped | stage=gpt | reason=no_records", image_name)
+                debug_rows.append(
+                    {
+                        "file": image_name,
+                        "ocr_line_count": ocr_line_count,
+                        "ocr_raw_text": raw_text,
+                        "gpt_record_count": 0,
+                        "gpt_records_json": None,
+                    }
+                )
                 continue
 
             gpt_success += 1
             record_count = len(records)
             total_records += record_count
             aggregated_records.extend(records)
+            total_gpt_records += record_count
             file_results.append(
                 {"file": image_name, "status": "processed", "stage": "done", "records": record_count}
+            )
+            drop_rate = 1.0 - (record_count / max(1, ocr_line_count))
+            logger.info(
+                "METRICS file=%s ocr_lines=%s gpt_records=%s drop_rate=%.3f",
+                image_name,
+                ocr_line_count,
+                record_count,
+                drop_rate,
+            )
+            debug_rows.append(
+                {
+                    "file": image_name,
+                    "ocr_line_count": ocr_line_count,
+                    "ocr_raw_text": raw_text,
+                    "gpt_record_count": record_count,
+                    "gpt_records_json": records,
+                }
             )
             logger.info(
                 "FILE %s | status=processed | stage=done | records=%s",
@@ -204,6 +255,14 @@ def main() -> None:
     logger.info("Pipeline errors: %d", processing_errors)
     logger.info("Total aggregated records: %d", total_records)
     logger.info("Run log file: %s", log_path)
+    if total_ocr_lines:
+        total_drop_rate = 1.0 - (total_gpt_records / max(1, total_ocr_lines))
+        logger.info(
+            "METRICS TOTAL ocr_lines=%s gpt_records=%s drop_rate=%.3f",
+            total_ocr_lines,
+            total_gpt_records,
+            total_drop_rate,
+        )
 
     try:
         exported_path = export_records_to_excel(
@@ -215,6 +274,23 @@ def main() -> None:
     except Exception as exc:
         logger.error("Excel export failed: %s", exc)
         logger.error("Excel export failed. Check logs for details.")
+
+    # Диагностический экспорт: 1 строка на входное изображение.
+    try:
+        max_len = int(os.getenv("DEBUG_OCR_TEXT_MAX_LEN", "5000"))
+        for row in debug_rows:
+            if isinstance(row.get("ocr_raw_text"), str):
+                row["ocr_raw_text"] = row["ocr_raw_text"][:max_len]
+        debug_path = PROJECT_ROOT / "debug_rows.xlsx"
+        debug_frame = pd.DataFrame(debug_rows)
+        if "gpt_records_json" in debug_frame.columns:
+            debug_frame["gpt_records_json"] = debug_frame["gpt_records_json"].apply(
+                lambda v: None if v is None else str(v)
+            )
+        debug_frame.to_excel(debug_path, index=False, engine="openpyxl")
+        logger.info("Debug export completed: %s", debug_path)
+    except Exception as exc:
+        logger.warning("Debug export failed: %s", exc)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from datetime import datetime
 
 EXPORT_COLUMNS = ["ФИО", "Дата рождения", "Пол", "Город", "Телефон", "Email"]
 
@@ -33,7 +34,15 @@ def export_records_to_excel(
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
     frame = _build_export_dataframe(records)
-    frame.to_excel(target_path, index=False, engine="openpyxl")
+    try:
+        frame.to_excel(target_path, index=False, engine="openpyxl")
+    except PermissionError:
+        # Если файл открыт в Excel/просмотрщике, запись в `result.xlsx` может быть
+        # невозможна. Тогда сохраняем в альтернативный файл.
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        alt_path = target_path.with_name(f"{target_path.stem}_{ts}{target_path.suffix}")
+        frame.to_excel(alt_path, index=False, engine="openpyxl")
+        target_path = alt_path
 
     if logger is not None:
         logger.info(

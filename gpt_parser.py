@@ -36,6 +36,30 @@ OCR-текст:
 """
 
 
+REPAIR_SYSTEM_PROMPT = (
+    "You repair structured records extracted from OCR. "
+    "Return only valid JSON without markdown or comments."
+)
+
+REPAIR_USER_PROMPT_TEMPLATE = """OCR-текст:
+{clean_text}
+
+Текущие записи (JSON-массив):
+{records_json}
+
+Задача:
+1) НЕ меняй длину массива и НЕ добавляй/не удаляй элементы.
+2) Заполни пропущенные или сомнительные значения в полях, где это нужно:
+   - Для обязательных полей (`ФИО`, `Дата рождения`, `Пол`, `Город`):
+     если значение null — замени на строку (или попытайся извлечь из OCR).
+     если значение пустое/слишком короткое — замени на строку.
+   - Для `Телефон` и `Email`:
+     если там null — попробуй заполнить, иначе оставь как есть.
+3) Если информации недостаточно — оставь значение null.
+4) Верни только исправленный JSON-массив.
+"""
+
+
 def _build_client(api_key: str | None = None) -> OpenAI:
     resolved_key = api_key or os.getenv("OPENAI_API_KEY", "")
     if not resolved_key:
@@ -81,6 +105,45 @@ def _validate_record(record: Any) -> dict[str, Any]:
         normalized[field] = value if value is not None else None
 
     return normalized
+
+
+def _needs_repair(records: list[dict[str, Any]]) -> bool:
+    """Decide whether a repair GPT pass is worthwhile."""
+    if not records:
+        return False
+
+    for rec in records:
+        # если хотя бы 2 обязательных поля null/None — ремонтируем
+        null_required = sum(1 for f in REQUIRED_STRING_FIELDS if rec.get(f) is None)
+        if null_required >= 2:
+            return True
+    return False
+
+
+def _repair_with_gpt(
+    *,
+    client: OpenAI,
+    clean_text: str,
+    records: list[dict[str, Any]],
+    logger: logging.Logger,
+) -> list[dict[str, Any]]:
+    """Run a second GPT call to fill null required fields."""
+    records_json = json.dumps(records, ensure_ascii=False)
+    response = client.responses.create(
+        model=MODEL_NAME,
+        input=[
+            {"role": "system", "content": REPAIR_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": REPAIR_USER_PROMPT_TEMPLATE.format(
+                    clean_text=clean_text,
+                    records_json=records_json,
+                ),
+            },
+        ],
+    )
+    content = _extract_text_content(response).strip()
+    return _parse_and_validate_json(content)
 
 
 def _parse_and_validate_json(payload: str) -> list[dict[str, Any]]:
@@ -135,6 +198,21 @@ def parse_with_gpt(
             )
             content = _extract_text_content(response).strip()
             records = _parse_and_validate_json(content)
+
+            # selective repair: если много null в обязательных полях
+            if attempt == 1 and _needs_repair(records):
+                try:
+                    repaired = _repair_with_gpt(
+                        client=client,
+                        clean_text=trimmed,
+                        records=records,
+                        logger=active_logger,
+                    )
+                    active_logger.info("GPT repair succeeded: %s records", len(repaired))
+                    return repaired
+                except Exception as exc:
+                    active_logger.warning("GPT repair failed, keep original: %s", exc)
+
             active_logger.info(
                 "GPT parsing succeeded (attempt %s): %s records",
                 attempt,
