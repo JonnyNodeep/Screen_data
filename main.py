@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from ocr import extract_raw_text, load_image_paths
+from utils import preprocess_text, run_preprocess_smoke_check
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -60,6 +61,12 @@ def main() -> None:
 
     ocr_success = 0
     ocr_skipped = 0
+    preprocess_success = 0
+    preprocess_skipped = 0
+    prepared_texts: list[tuple[Path, str]] = []
+
+    for sample_input, sample_output in run_preprocess_smoke_check():
+        logger.info("Preprocess smoke-check: %s -> %s", ascii(sample_input), ascii(sample_output))
 
     for image_path in image_paths:
         raw_text = extract_raw_text(image_path, logger=logger)
@@ -70,8 +77,21 @@ def main() -> None:
         ocr_success += 1
         logger.info("OCR extracted text for %s", image_path)
 
+        clean_text = preprocess_text(raw_text)
+        if not clean_text:
+            preprocess_skipped += 1
+            logger.warning("Preprocessing skipped for %s: empty/too short clean text", image_path)
+            continue
+
+        preprocess_success += 1
+        prepared_texts.append((image_path, clean_text))
+        logger.info("Preprocessing succeeded for %s", image_path)
+
     print(f"OCR successful files: {ocr_success}")
     print(f"OCR skipped files: {ocr_skipped}")
+    print(f"Preprocessing successful files: {preprocess_success}")
+    print(f"Preprocessing skipped files: {preprocess_skipped}")
+    print(f"Prepared texts for next stage: {len(prepared_texts)}")
 
 
 if __name__ == "__main__":
