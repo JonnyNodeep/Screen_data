@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 import logging
 from pathlib import Path
+from typing import Any
 
+from gpt_parser import parse_with_gpt
 from ocr import extract_raw_text, load_image_paths
 from utils import preprocess_text, run_preprocess_smoke_check
 
@@ -59,39 +61,107 @@ def main() -> None:
     print(f"OpenAI API key configured: {'yes' if has_api_key else 'no'}")
     print(f"Valid image files detected: {len(image_paths)}")
 
+    total_files = len(image_paths)
     ocr_success = 0
     ocr_skipped = 0
     preprocess_success = 0
     preprocess_skipped = 0
-    prepared_texts: list[tuple[Path, str]] = []
+    gpt_success = 0
+    gpt_skipped = 0
+    processing_errors = 0
+    total_records = 0
+
+    aggregated_records: list[dict[str, Any]] = []
+    file_results: list[dict[str, Any]] = []
 
     for sample_input, sample_output in run_preprocess_smoke_check():
         logger.info("Preprocess smoke-check: %s -> %s", ascii(sample_input), ascii(sample_output))
 
     for image_path in image_paths:
-        raw_text = extract_raw_text(image_path, logger=logger)
-        if raw_text is None:
-            ocr_skipped += 1
-            logger.warning("OCR skipped for %s", image_path)
-            continue
-        ocr_success += 1
-        logger.info("OCR extracted text for %s", image_path)
+        image_name = image_path.name
+        try:
+            raw_text = extract_raw_text(image_path, logger=logger)
+            if raw_text is None:
+                ocr_skipped += 1
+                file_results.append(
+                    {"file": image_name, "status": "skipped", "stage": "ocr", "records": 0}
+                )
+                logger.warning("FILE %s | status=skipped | stage=ocr | reason=empty_or_failed", image_name)
+                continue
+            ocr_success += 1
+            logger.info("FILE %s | status=ok | stage=ocr", image_name)
 
-        clean_text = preprocess_text(raw_text)
-        if not clean_text:
-            preprocess_skipped += 1
-            logger.warning("Preprocessing skipped for %s: empty/too short clean text", image_path)
-            continue
+            clean_text = preprocess_text(raw_text)
+            if not clean_text:
+                preprocess_skipped += 1
+                file_results.append(
+                    {
+                        "file": image_name,
+                        "status": "skipped",
+                        "stage": "preprocess",
+                        "records": 0,
+                    }
+                )
+                logger.warning(
+                    "FILE %s | status=skipped | stage=preprocess | reason=empty_clean_text",
+                    image_name,
+                )
+                continue
 
-        preprocess_success += 1
-        prepared_texts.append((image_path, clean_text))
-        logger.info("Preprocessing succeeded for %s", image_path)
+            preprocess_success += 1
+            logger.info("FILE %s | status=ok | stage=preprocess", image_name)
 
+            records = parse_with_gpt(
+                clean_text,
+                api_key=config["OPENAI_API_KEY"] or None,
+                logger=logger,
+            )
+            if not records:
+                gpt_skipped += 1
+                file_results.append(
+                    {"file": image_name, "status": "skipped", "stage": "gpt", "records": 0}
+                )
+                logger.warning("FILE %s | status=skipped | stage=gpt | reason=no_records", image_name)
+                continue
+
+            gpt_success += 1
+            record_count = len(records)
+            total_records += record_count
+            aggregated_records.extend(records)
+            file_results.append(
+                {"file": image_name, "status": "processed", "stage": "done", "records": record_count}
+            )
+            logger.info(
+                "FILE %s | status=processed | stage=done | records=%s",
+                image_name,
+                record_count,
+            )
+        except Exception as exc:
+            processing_errors += 1
+            file_results.append(
+                {"file": image_name, "status": "error", "stage": "pipeline", "records": 0}
+            )
+            logger.error("FILE %s | status=error | stage=pipeline | reason=%s", image_name, exc)
+
+    logger.info("Per-file processing summary (%s files):", len(file_results))
+    for item in file_results:
+        logger.info(
+            "SUMMARY file=%s status=%s stage=%s records=%s",
+            item["file"],
+            item["status"],
+            item["stage"],
+            item["records"],
+        )
+
+    print(f"Total input files: {total_files}")
     print(f"OCR successful files: {ocr_success}")
     print(f"OCR skipped files: {ocr_skipped}")
     print(f"Preprocessing successful files: {preprocess_success}")
     print(f"Preprocessing skipped files: {preprocess_skipped}")
-    print(f"Prepared texts for next stage: {len(prepared_texts)}")
+    print(f"GPT successful files: {gpt_success}")
+    print(f"GPT skipped files: {gpt_skipped}")
+    print(f"Pipeline errors: {processing_errors}")
+    print(f"Total aggregated records: {total_records}")
 
 
 if __name__ == "__main__":
