@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from export import export_records_to_excel
 from gpt_parser import parse_with_gpt
 from ocr import extract_raw_text, load_image_paths
 from utils import preprocess_text, run_preprocess_smoke_check
@@ -162,6 +163,17 @@ def main() -> None:
     print(f"GPT skipped files: {gpt_skipped}")
     print(f"Pipeline errors: {processing_errors}")
     print(f"Total aggregated records: {total_records}")
+
+    try:
+        exported_path = export_records_to_excel(
+            aggregated_records,
+            config["RESULT_XLSX_PATH"],
+            logger=logger,
+        )
+        print(f"Excel export completed: {exported_path}")
+    except Exception as exc:
+        logger.error("Excel export failed: %s", exc)
+        print("Excel export failed. Check logs for details.")
 
 
 if __name__ == "__main__":

@@ -13,3 +13,14 @@ OCR tables from screenshots and export parsed data to Excel.
 ## Run
 
 `poetry run python main.py`
+
+## Output
+
+- Result file path is controlled by `RESULT_XLSX_PATH` (default: `result.xlsx`).
+- Excel columns are exported in fixed order:
+  - `ФИО`
+  - `Дата рождения`
+  - `Пол`
+  - `Город`
+  - `Телефон`
+  - `Email`
