@@ -3,15 +3,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any
 
 from openai import OpenAI
 
 
 MODEL_NAME = "gpt-4.1-mini"
-REQUIRED_STRING_FIELDS = ("ФИО", "Дата рождения", "Пол", "Город")
+REQUIRED_STRING_FIELDS = ("Дата рождения", "Пол", "Город")
 OPTIONAL_NULLABLE_FIELDS = ("Телефон", "Email")
 ALL_FIELDS = REQUIRED_STRING_FIELDS + OPTIONAL_NULLABLE_FIELDS
+_CITY_CYRILLIC_RE = re.compile(r"^[А-Яа-яЁё\s\-]+$")
 
 SYSTEM_PROMPT = (
     "You extract structured records from OCR text. "
@@ -19,7 +21,6 @@ SYSTEM_PROMPT = (
 )
 
 USER_PROMPT_TEMPLATE = """Преобразуй OCR-текст в JSON-массив объектов строго с полями:
-- "ФИО": string
 - "Дата рождения": string
 - "Пол": string
 - "Город": string
@@ -28,8 +29,11 @@ USER_PROMPT_TEMPLATE = """Преобразуй OCR-текст в JSON-масси
 
 Требования:
 1) Ответ только JSON-массив, без пояснений и markdown.
-2) Каждый элемент массива содержит все 6 полей.
+2) Каждый элемент массива содержит все 5 полей.
 3) Если телефон или email отсутствуют, ставь null.
+4) Поле "Город" возвращай только на кириллице (допустимы пробел и дефис).
+5) Если "Город" распознан латиницей/смешанно, нормализуй в кириллицу.
+   Примеры: "Moskva" -> "Москва", "Sankt-Peterburg" -> "Санкт-Петербург".
 
 OCR-текст:
 {clean_text}
@@ -50,9 +54,10 @@ REPAIR_USER_PROMPT_TEMPLATE = """OCR-текст:
 Задача:
 1) НЕ меняй длину массива и НЕ добавляй/не удаляй элементы.
 2) Заполни пропущенные или сомнительные значения в полях, где это нужно:
-   - Для обязательных полей (`ФИО`, `Дата рождения`, `Пол`, `Город`):
+   - Для обязательных полей (`Дата рождения`, `Пол`, `Город`):
      если значение null — замени на строку (или попытайся извлечь из OCR).
      если значение пустое/слишком короткое — замени на строку.
+     если поле `Город` содержит латиницу/смешанную раскладку — исправь в кириллицу.
    - Для `Телефон` и `Email`:
      если там null — попробуй заполнить, иначе оставь как есть.
 3) Если информации недостаточно — оставь значение null.
@@ -117,6 +122,11 @@ def _needs_repair(records: list[dict[str, Any]]) -> bool:
         null_required = sum(1 for f in REQUIRED_STRING_FIELDS if rec.get(f) is None)
         if null_required >= 2:
             return True
+        city = rec.get("Город")
+        if isinstance(city, str):
+            city_clean = city.strip()
+            if city_clean and not _CITY_CYRILLIC_RE.fullmatch(city_clean):
+                return True
     return False
 
 
@@ -165,8 +175,8 @@ def parse_with_gpt(
     Contract:
     - Input: non-empty clean_text (str)
     - Output: list[dict] with fixed keys:
-      ФИО, Дата рождения, Пол, Город, Телефон, Email
-    - Телефон/Email may be null; other fields must be non-empty strings.
+      Дата рождения, Пол, Город, Телефон, Email
+    - Телефон/Email may be null; other fields may be null on uncertain OCR.
     """
     active_logger = logger or logging.getLogger(__name__)
     if not isinstance(clean_text, str):

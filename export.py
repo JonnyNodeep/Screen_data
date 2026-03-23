@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 from datetime import datetime
 
-EXPORT_COLUMNS = ["ФИО", "Дата рождения", "Пол", "Город", "Телефон", "Email"]
+EXPORT_COLUMNS = ["Дата рождения", "Пол", "Город", "Телефон", "Email"]
 
 
 def _build_export_dataframe(records: list[dict[str, Any]]) -> pd.DataFrame:

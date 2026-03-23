@@ -215,9 +215,9 @@ def extract_raw_text_with_meta(
         # Multi-pass OCR.
         # Multi-pass OCR.
         # Чтобы не получить нестабильный нативный crash, `ru` делаем опциональным.
-        # По умолчанию: только `en`.
-        # Включить оба прохода можно через env: `OCR_LANGS=en,ru`.
-        langs_env = os.getenv("OCR_LANGS", "en")
+        # По умолчанию: `en,ru` для лучшей кириллицы в поле "Город".
+        # При необходимости поведение можно переопределить через env `OCR_LANGS`.
+        langs_env = os.getenv("OCR_LANGS", "en,ru")
         langs = []
         for part in langs_env.split(","):
             p = part.strip().lower()
