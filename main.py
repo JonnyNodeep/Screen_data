@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import os
 import logging
 from pathlib import Path
@@ -42,25 +43,56 @@ def get_runtime_config() -> dict[str, str]:
     }
 
 
-def configure_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+def configure_logging() -> Path:
+    """
+    Configure root logger with both console and file handlers.
+
+    Returns file path is not required for runtime, but can be used for reporting.
+    """
+
+    logs_dir = PROJECT_ROOT / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = logs_dir / f"run_{ts}.log"
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Remove existing handlers to avoid duplicated logs on repeated runs.
+    for handler in list(root_logger.handlers):
+        root_logger.removeHandler(handler)
+
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(name)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
+
+    return log_path
 
 
 def main() -> None:
-    configure_logging()
+    log_path = configure_logging()
     logger = logging.getLogger(__name__)
     config = get_runtime_config()
     has_api_key = bool(config["OPENAI_API_KEY"])
     image_paths = load_image_paths(config["IMAGES_DIR"], logger=logger)
 
-    print("DSData MVP bootstrap started.")
-    print(f"Images directory: {config['IMAGES_DIR']}")
-    print(f"Result path: {config['RESULT_XLSX_PATH']}")
-    print(f"OpenAI API key configured: {'yes' if has_api_key else 'no'}")
-    print(f"Valid image files detected: {len(image_paths)}")
+    logger.info("DSData MVP bootstrap started.")
+    logger.info("Images directory: %s", config["IMAGES_DIR"])
+    logger.info("Result path: %s", config["RESULT_XLSX_PATH"])
+    logger.info("OpenAI API key configured: %s", "yes" if has_api_key else "no")
+    logger.info("Valid image files detected: %d", len(image_paths))
 
     total_files = len(image_paths)
     ocr_success = 0
@@ -140,29 +172,38 @@ def main() -> None:
         except Exception as exc:
             processing_errors += 1
             file_results.append(
-                {"file": image_name, "status": "error", "stage": "pipeline", "records": 0}
+                {
+                    "file": image_name,
+                    "status": "error",
+                    "stage": "pipeline",
+                    "records": 0,
+                    "reason": str(exc),
+                }
             )
-            logger.error("FILE %s | status=error | stage=pipeline | reason=%s", image_name, exc)
+            logger.exception("FILE %s | status=error | stage=pipeline", image_name)
 
     logger.info("Per-file processing summary (%s files):", len(file_results))
     for item in file_results:
+        reason = item.get("reason")
         logger.info(
-            "SUMMARY file=%s status=%s stage=%s records=%s",
+            "SUMMARY file=%s status=%s stage=%s records=%s%s",
             item["file"],
             item["status"],
             item["stage"],
             item["records"],
+            f" | reason={reason}" if reason else "",
         )
 
-    print(f"Total input files: {total_files}")
-    print(f"OCR successful files: {ocr_success}")
-    print(f"OCR skipped files: {ocr_skipped}")
-    print(f"Preprocessing successful files: {preprocess_success}")
-    print(f"Preprocessing skipped files: {preprocess_skipped}")
-    print(f"GPT successful files: {gpt_success}")
-    print(f"GPT skipped files: {gpt_skipped}")
-    print(f"Pipeline errors: {processing_errors}")
-    print(f"Total aggregated records: {total_records}")
+    logger.info("Total input files: %d", total_files)
+    logger.info("OCR successful files: %d", ocr_success)
+    logger.info("OCR skipped files: %d", ocr_skipped)
+    logger.info("Preprocessing successful files: %d", preprocess_success)
+    logger.info("Preprocessing skipped files: %d", preprocess_skipped)
+    logger.info("GPT successful files: %d", gpt_success)
+    logger.info("GPT skipped files: %d", gpt_skipped)
+    logger.info("Pipeline errors: %d", processing_errors)
+    logger.info("Total aggregated records: %d", total_records)
+    logger.info("Run log file: %s", log_path)
 
     try:
         exported_path = export_records_to_excel(
@@ -170,10 +211,10 @@ def main() -> None:
             config["RESULT_XLSX_PATH"],
             logger=logger,
         )
-        print(f"Excel export completed: {exported_path}")
+        logger.info("Excel export completed: %s", exported_path)
     except Exception as exc:
         logger.error("Excel export failed: %s", exc)
-        print("Excel export failed. Check logs for details.")
+        logger.error("Excel export failed. Check logs for details.")
 
 
 if __name__ == "__main__":

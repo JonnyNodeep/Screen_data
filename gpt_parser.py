@@ -60,21 +60,26 @@ def _validate_record(record: Any) -> dict[str, Any]:
     if not isinstance(record, dict):
         raise ValueError("Each JSON item must be an object")
 
-    missing = [field for field in ALL_FIELDS if field not in record]
-    if missing:
-        raise ValueError(f"Missing required fields: {missing}")
+    # В ТЗ допускаются "пустые значения" (null или пустая ячейка).
+    # Поэтому для обязательных полей принимаем пустую строку и/или null,
+    # чтобы программа не падала на "почти валидном" OCR.
+    normalized: dict[str, Any] = {field: record.get(field) for field in ALL_FIELDS}
 
     for field in REQUIRED_STRING_FIELDS:
-        value = record.get(field)
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"Field '{field}' must be a non-empty string")
+        value = normalized.get(field)
+        if value is None:
+            normalized[field] = None
+            continue
+        if not isinstance(value, str):
+            raise ValueError(f"Field '{field}' must be a string or null")
+        normalized[field] = value if value.strip() else None
 
     for field in OPTIONAL_NULLABLE_FIELDS:
-        value = record.get(field)
+        value = normalized.get(field)
         if value is not None and not isinstance(value, str):
             raise ValueError(f"Field '{field}' must be string or null")
+        normalized[field] = value if value is not None else None
 
-    normalized: dict[str, Any] = {field: record[field] for field in ALL_FIELDS}
     return normalized
 
 

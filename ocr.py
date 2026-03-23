@@ -41,29 +41,53 @@ def extract_raw_text(image_path: str | Path, logger: logging.Logger | None = Non
 
     try:
         ocr_engine = _get_ocr_engine()
-        result = ocr_engine.ocr(str(image), cls=True)
+        # `paddleocr` API менялся между версиями: в некоторых версиях параметр
+        # `cls` передавать нельзя (он прокидывается внутрь в predict()).
+        # Поэтому делаем совместимый вызов.
+        try:
+            result = ocr_engine.ocr(str(image), cls=True)
+        except TypeError:
+            result = ocr_engine.ocr(str(image))
     except Exception as exc:
         active_logger.error("OCR failed for %s: %s", image, exc)
         return None
 
+    # Новый формат результата (PaddleX/OCRResult): `rec_texts` + `rec_boxes`.
+    # `rec_boxes[i]` обычно имеет вид [x1, y1, x2, y2], а `rec_texts[i]` —
+    # текст для соответствующего бокса.
     lines: list[tuple[float, float, str]] = []
     if result:
         for page in result:
             if not page:
                 continue
-            for item in page:
-                if not item or len(item) < 2:
+
+            try:
+                rec_texts = page["rec_texts"]
+                rec_boxes = page["rec_boxes"]
+            except Exception:
+                continue
+
+            # rec_boxes обычно numpy.ndarray длины N, элементы формы (4,)
+            if not rec_texts or rec_boxes is None:
+                continue
+
+            for text, box in zip(rec_texts, rec_boxes):
+                text_str = str(text).strip()
+                if not text_str:
                     continue
-                bbox = item[0]
-                text_info = item[1]
-                if not bbox or not text_info:
+
+                # box: [x1, y1, x2, y2]
+                try:
+                    b = box.tolist() if hasattr(box, "tolist") else list(box)
+                    if len(b) < 4:
+                        continue
+                    x1, y1, x2, y2 = b[:4]
+                    avg_y = (float(y1) + float(y2)) / 2.0
+                    min_x = min(float(x1), float(x2))
+                except Exception:
                     continue
-                text = str(text_info[0]).strip()
-                if not text:
-                    continue
-                avg_y = sum(point[1] for point in bbox) / len(bbox)
-                min_x = min(point[0] for point in bbox)
-                lines.append((avg_y, min_x, text))
+
+                lines.append((avg_y, min_x, text_str))
 
     if not lines:
         active_logger.warning("Skipping image with empty OCR output: %s", image)

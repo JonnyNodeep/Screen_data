@@ -5,7 +5,7 @@ description = ""
 authors = [
     {name = "Jon X",email = "89638552102es@gamil.com"}
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "paddleocr (>=3.4.0,<4.0.0)",
     "pandas (>=3.0.1,<4.0.0)",
