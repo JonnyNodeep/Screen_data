@@ -69,7 +69,12 @@ def _build_client(api_key: str | None = None) -> OpenAI:
     resolved_key = api_key or os.getenv("OPENAI_API_KEY", "")
     if not resolved_key:
         raise ValueError("OPENAI_API_KEY is not configured")
-    return OpenAI(api_key=resolved_key)
+    raw_timeout = os.getenv("OPENAI_TIMEOUT_SECONDS", "180")
+    try:
+        timeout_sec = float(raw_timeout)
+    except ValueError:
+        timeout_sec = 180.0
+    return OpenAI(api_key=resolved_key, timeout=timeout_sec)
 
 
 def _extract_text_content(response: Any) -> str:
@@ -240,6 +245,7 @@ def parse_with_gpt(
                 return []
         except Exception as exc:
             active_logger.error("GPT API request failed (attempt %s/2): %s", attempt, exc)
-            return []
+            if attempt == 2:
+                return []
 
     return []

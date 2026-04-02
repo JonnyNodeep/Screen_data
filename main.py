@@ -115,9 +115,15 @@ def main() -> None:
     for sample_input, sample_output in run_preprocess_smoke_check():
         logger.info("Preprocess smoke-check: %s -> %s", ascii(sample_input), ascii(sample_output))
 
-    for image_path in image_paths:
+    for idx, image_path in enumerate(image_paths, start=1):
         image_name = image_path.name
         try:
+            logger.info(
+                "PROGRESS %d/%d | %s | OCR started (may take several minutes per file)",
+                idx,
+                total_files,
+                image_name,
+            )
             raw_text, ocr_line_count = extract_raw_text_with_meta(image_path, logger=logger)
             if raw_text is None:
                 ocr_skipped += 1
@@ -137,6 +143,13 @@ def main() -> None:
                 continue
             ocr_success += 1
             logger.info("FILE %s | status=ok | stage=ocr", image_name)
+            logger.info(
+                "PROGRESS %d/%d | %s | OCR done (%d lines) — preprocessing",
+                idx,
+                total_files,
+                image_name,
+                ocr_line_count,
+            )
             total_ocr_lines += ocr_line_count
 
             clean_text = preprocess_text(raw_text)
@@ -167,6 +180,12 @@ def main() -> None:
 
             preprocess_success += 1
             logger.info("FILE %s | status=ok | stage=preprocess", image_name)
+            logger.info(
+                "PROGRESS %d/%d | %s | calling GPT API",
+                idx,
+                total_files,
+                image_name,
+            )
 
             records = parse_with_gpt(
                 clean_text,

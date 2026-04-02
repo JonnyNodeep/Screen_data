@@ -189,9 +189,11 @@ def extract_raw_text_with_meta(
             w, h = pil_img.size
             if max(w, h) > 0:
                 scale = min(max_side / w, max_side / h)
-                if scale > 1.0:
-                    new_w = max(1, int(w * scale))
-                    new_h = max(1, int(h * scale))
+                # Раньше масштабировали только вверх (scale > 1), из‑за этого большие
+                # фото шли в OCR без даунскейла и Paddle падал на Windows.
+                if scale != 1.0:
+                    new_w = max(1, int(round(w * scale)))
+                    new_h = max(1, int(round(h * scale)))
                     resample = (
                         getattr(Image, "Resampling", Image).LANCZOS
                         if hasattr(Image, "Resampling")
