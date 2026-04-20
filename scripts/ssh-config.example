@@ -1,0 +1,19 @@
+# Скопируйте фрагмент в файл:  C:\Users\ВАШ_ПОЛЬЗОВАТЕЛЬ\.ssh\config  (создайте папку .ssh при необходимости)
+# Замените YOUR_SERVER_IP и путь к приватному ключу (файл без .pub).
+
+# На сервере в ~/.ssh/authorized_keys должен быть ваш ПУБЛИЧНЫЙ ключ (.pub), не приватный.
+
+Host dsdata-vps
+    HostName YOUR_SERVER_IP
+    User root
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+
+# После этого с Windows:
+#   ssh dsdata-vps
+# или:
+#   .\scripts\connect-server.ps1 -ConfigHost dsdata-vps
+
+# Без config, одной командой (подставьте путь к ключу и IP):
+#   ssh -i $env:USERPROFILE\.ssh\id_ed25519 -o IdentitiesOnly=yes root@YOUR_SERVER_IP

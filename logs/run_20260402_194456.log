@@ -1,0 +1,13 @@
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | Loaded 1 valid image(s) from C:\Projects\Projects\DSData\images
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | DSData MVP bootstrap started.
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | Images directory: images
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | Result path: result.xlsx
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | OpenAI API key configured: yes
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | Valid image files detected: 1
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | Preprocess smoke-check: '\u0418\u0432\u0430\u043d\u043e\u0432\n\u0418\u0432\u0430\u043d\t\u0418\u0432\u0430\u043d\u043e\u0432\u0438\u0447   1990' -> '\u0418\u0432\u0430\u043d\u043e\u0432 \u0418\u0432\u0430\u043d \u0418\u0432\u0430\u043d\u043e\u0432\u0438\u0447 1990'
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | Preprocess smoke-check: '\u0413\u043e\u0440\u043e\u0434:\x0b \u041c\u043e\u0441\u043a\u0432\u0430 \ufffd  +7(999)123-45-67' -> '\u0413\u043e\u0440\u043e\u0434: \u041c\u043e\u0441\u043a\u0432\u0430 +7(999)123-45-67'
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | Preprocess smoke-check: 'email:\u200b test@example.com ||||||' -> 'email: test@example.com'
+2026-04-02 19:44:56 | INFO | __main__ | __main__ | PROGRESS 1/1 | IMG_6569.JPG | OCR started (may take several minutes per file)
+2026-04-02 19:46:56 | ERROR | __main__ | __main__ | GPT API request failed (attempt 1/2): Error code: 403 - {'error': {'code': 'unsupported_country_region_territory', 'message': 'Country, region, or territory not supported', 'param': None, 'type': 'request_forbidden'}}
+2026-04-02 19:46:56 | ERROR | __main__ | __main__ | GPT API request failed (attempt 2/2): Error code: 403 - {'error': {'code': 'unsupported_country_region_territory', 'message': 'Country, region, or territory not supported', 'param': None, 'type': 'request_forbidden'}}
+2026-04-02 19:46:56 | WARNING | __main__ | __main__ | FILE IMG_6569.JPG | status=skipped | stage=gpt | reason=no_records
